@@ -33,7 +33,7 @@ from transformers import (
     EarlyStoppingCallback,
     TrainingArguments,
 )
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 
 logger = logging.getLogger(__name__)
 
@@ -294,9 +294,10 @@ class GDriveSyncCallback:
 # Training Arguments Builder
 # ============================================================
 
-def build_training_args(tcfg: dict) -> TrainingArguments:
+def build_training_args(tcfg: dict) -> SFTConfig:
     """
-    Build TrainingArguments from config, handling all GCP-optimized settings.
+    Build SFTConfig from config, handling all GCP-optimized settings.
+    SFTConfig extends TrainingArguments with max_seq_length and packing.
     """
     args_dict = {
         "output_dir": tcfg["output_dir"],
@@ -327,13 +328,16 @@ def build_training_args(tcfg: dict) -> TrainingArguments:
         "dataloader_num_workers": tcfg.get("dataloader_num_workers", 4),
         "dataloader_pin_memory": tcfg.get("dataloader_pin_memory", True),
         "torch_compile": tcfg.get("torch_compile", False),
+        # SFT-specific args (moved from SFTTrainer to SFTConfig in newer TRL)
+        "max_seq_length": tcfg.get("max_seq_length", 2048),
+        "packing": tcfg.get("packing", True),
     }
 
     # NEFTune noise alpha (if supported)
     if "neftune_noise_alpha" in tcfg:
         args_dict["neftune_noise_alpha"] = tcfg["neftune_noise_alpha"]
 
-    return TrainingArguments(**args_dict)
+    return SFTConfig(**args_dict)
 
 
 # ============================================================
@@ -373,7 +377,7 @@ def train(config_path: str = "configs/model_config.yaml", resume: bool | None = 
     # ---- GPU Info ----
     if torch.cuda.is_available():
         gpu_name = torch.cuda.get_device_name(0)
-        gpu_mem = torch.cuda.get_device_properties(0).total_mem / (1024**3)
+        gpu_mem = torch.cuda.get_device_properties(0).total_memory / (1024**3)
         logger.info(f"GPU: {gpu_name} ({gpu_mem:.1f} GB)")
     else:
         logger.warning("No GPU detected! Training will be extremely slow on CPU.")
@@ -432,9 +436,7 @@ def train(config_path: str = "configs/model_config.yaml", resume: bool | None = 
         args=training_args,
         train_dataset=dataset["train"],
         eval_dataset=dataset["eval"],
-        tokenizer=tokenizer,
-        max_seq_length=tcfg["max_seq_length"],
-        packing=tcfg.get("packing", True),
+        processing_class=tokenizer,
         callbacks=callbacks,
     )
 
