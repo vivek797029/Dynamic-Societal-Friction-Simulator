@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Training outputs
+outputs/checkpoints/
+outputs/logs/
+outputs/results/
+
+# Data (keep prompts, ignore generated)
+data/raw/
+data/processed/
+data/synthetic/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Weights & Biases
+wandb/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment
+.env
+*.env.local

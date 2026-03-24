@@ -1,0 +1,238 @@
+# ============================================================
+# Dynamic Society Friction Simulator — Simulation Configuration
+# ============================================================
+# HEAVY MODE — Large population, long run, rich dynamics.
+# Designed to run overnight or for days to capture deep emergent behavior.
+
+simulation:
+  name: "heavy_scenario"
+  description: "Full-scale multi-domain friction simulation — heavy mode"
+  seed: 42
+  num_steps: 1000                 # ~19 years of simulated weekly events
+  step_interval_days: 7
+
+  active_domains:
+    - "social_cultural"
+    - "political"
+
+# ================================================================
+# SOCIETY SETUP — Large Population, 6 Groups
+# ================================================================
+society:
+  population_size: 200            # 200 agents for complex dynamics
+  num_groups: 6                   # 6 distinct cultural/social groups
+  groups:
+    - name: "Traditionalists"
+      size_ratio: 0.20
+      core_values: ["heritage", "stability", "authority", "religion"]
+      openness_to_change: 0.15
+
+    - name: "Progressives"
+      size_ratio: 0.20
+      core_values: ["equality", "innovation", "freedom", "diversity"]
+      openness_to_change: 0.85
+
+    - name: "Pragmatists"
+      size_ratio: 0.20
+      core_values: ["efficiency", "compromise", "growth", "evidence"]
+      openness_to_change: 0.55
+
+    - name: "Isolationists"
+      size_ratio: 0.12
+      core_values: ["autonomy", "self-reliance", "boundaries", "sovereignty"]
+      openness_to_change: 0.25
+
+    - name: "Youth_Activists"
+      size_ratio: 0.15
+      core_values: ["climate_justice", "digital_rights", "anti_corruption", "inclusivity"]
+      openness_to_change: 0.9
+
+    - name: "Working_Class"
+      size_ratio: 0.13
+      core_values: ["economic_security", "fair_wages", "community", "dignity"]
+      openness_to_change: 0.4
+
+# ================================================================
+# POLITICAL LANDSCAPE — 5 Factions
+# ================================================================
+political:
+  enabled: true
+
+  ideology_spectrum:
+    range: [-1.0, 1.0]
+    group_anchors:
+      Traditionalists: 0.55
+      Progressives: -0.55
+      Pragmatists: 0.0
+      Isolationists: 0.65
+      Youth_Activists: -0.7
+      Working_Class: -0.15
+    individual_noise: 0.25
+
+  factions:
+    - name: "Left Coalition"
+      ideology_center: -0.6
+      key_policies: ["social_welfare", "climate_action", "progressive_taxation", "civil_rights", "healthcare_reform"]
+      rhetoric_style: "inclusive"
+
+    - name: "Center Alliance"
+      ideology_center: 0.0
+      key_policies: ["fiscal_balance", "pragmatic_reform", "bipartisan_cooperation", "tech_regulation"]
+      rhetoric_style: "moderate"
+
+    - name: "Right Bloc"
+      ideology_center: 0.6
+      key_policies: ["national_security", "free_market", "traditional_values", "border_control", "deregulation"]
+      rhetoric_style: "assertive"
+
+    - name: "Populist Movement"
+      ideology_center: 0.35
+      key_policies: ["anti_establishment", "economic_nationalism", "direct_democracy", "anti_elitism"]
+      rhetoric_style: "confrontational"
+
+    - name: "Green Alliance"
+      ideology_center: -0.4
+      key_policies: ["climate_emergency", "renewable_energy", "environmental_justice", "sustainable_economy"]
+      rhetoric_style: "urgent"
+
+  polarization:
+    echo_chamber_strength: 0.7
+    cross_cutting_exposure: 0.15
+    radicalization_rate: 0.06
+    moderation_rate: 0.025
+    media_bias_factor: 0.5
+
+  elections:
+    enabled: true
+    frequency_steps: 50           # election every 50 steps (~1 year)
+    campaign_window: 10           # 10 weeks of campaign rhetoric
+    post_election_friction_boost: 0.2
+
+# ================================================================
+# FRICTION DYNAMICS — Expanded Event Types
+# ================================================================
+friction:
+  social_event_types:
+    - "resource_competition"
+    - "cultural_clash"
+    - "migration_tension"
+    - "economic_inequality"
+    - "identity_conflict"
+    - "generational_divide"
+    - "housing_crisis"
+    - "education_access_dispute"
+    - "religious_tension"
+    - "language_rights_conflict"
+
+  political_event_types:
+    - "policy_disagreement"
+    - "election_controversy"
+    - "media_polarization"
+    - "legislative_deadlock"
+    - "protest_movement"
+    - "disinformation_campaign"
+    - "judicial_conflict"
+    - "foreign_policy_crisis"
+    - "corruption_scandal"
+    - "civil_liberties_debate"
+    - "surveillance_overreach"
+    - "party_split"
+    - "constitutional_crisis"
+    - "budget_standoff"
+    - "whistleblower_event"
+
+  crossover_event_types:
+    - "politicized_cultural_issue"
+    - "identity_politics_clash"
+    - "economic_policy_vs_cultural_values"
+    - "immigration_policy_debate"
+    - "education_curriculum_war"
+    - "healthcare_as_political_weapon"
+    - "climate_policy_vs_jobs"
+    - "technology_regulation_battle"
+    - "religious_freedom_vs_civil_rights"
+    - "policing_and_justice_reform"
+
+  escalation_threshold: 0.65
+  resolution_probability: 0.2     # harder to resolve — more realistic
+  cascade_factor: 1.4
+  political_amplification: 1.6
+  crossover_probability: 0.25
+
+# ================================================================
+# AGENT BEHAVIOR
+# ================================================================
+agents:
+  memory_window: 50               # longer memory — agents remember more
+  persuasion_enabled: true
+  influence_radius: 4
+  emotion_model: "valence_arousal"
+
+  political_engagement: 0.65
+  partisan_loyalty: 0.55
+  susceptibility_to_rhetoric: 0.45
+
+# ================================================================
+# INFORMATION ECOSYSTEM — 6 Media Outlets
+# ================================================================
+media:
+  enabled: true
+  num_outlets: 6
+  outlets:
+    - name: "Progressive Daily"
+      ideology_bias: -0.65
+      reach: 0.25
+      credibility: 0.6
+
+    - name: "Centrist Tribune"
+      ideology_bias: 0.05
+      reach: 0.35
+      credibility: 0.8
+
+    - name: "Conservative Herald"
+      ideology_bias: 0.55
+      reach: 0.25
+      credibility: 0.6
+
+    - name: "Populist Wire"
+      ideology_bias: 0.4
+      reach: 0.2
+      sensationalism: 0.85
+      credibility: 0.25
+
+    - name: "Youth Digital Network"
+      ideology_bias: -0.5
+      reach: 0.3
+      credibility: 0.5
+      sensationalism: 0.4
+
+    - name: "State Broadcaster"
+      ideology_bias: 0.1
+      reach: 0.5
+      credibility: 0.65
+
+  social_media:
+    enabled: true
+    virality_threshold: 0.55
+    algorithm_polarization: 0.6
+    misinformation_rate: 0.15
+
+# ================================================================
+# NETWORK TOPOLOGY
+# ================================================================
+network:
+  type: "small_world"
+  avg_connections: 8              # more connections = richer interactions
+  rewiring_probability: 0.15
+  political_homophily: 0.45
+
+# ================================================================
+# OUTPUT
+# ================================================================
+output:
+  save_dir: "./outputs/results"
+  save_every_n_steps: 25
+  export_formats: ["json", "csv"]
+  generate_visualizations: true
+  track_ideology_shifts: true
+  track_faction_allegiance: true

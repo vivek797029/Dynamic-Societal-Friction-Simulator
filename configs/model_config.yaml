@@ -1,0 +1,124 @@
+# ============================================================
+# Dynamic Society Friction Simulator — Model Configuration
+# ============================================================
+# GCP CLOUD MODE — Optimized for Google Colab / GCP with A100/V100/T4.
+# Designed to run for days. Full checkpoint resume support.
+# With ₹27K GCP credits you can train for ~50-100 hours on A100.
+
+# --- Base Model Selection ---
+base_model:
+  name: "mistralai/Mistral-7B-Instruct-v0.3"
+  revision: "main"
+  trust_remote_code: false
+
+# --- Quantization (QLoRA) ---
+quantization:
+  enabled: true
+  load_in_4bit: true
+  bnb_4bit_compute_dtype: "bfloat16"    # A100 has native bf16 support
+  bnb_4bit_quant_type: "nf4"
+  bnb_4bit_use_double_quant: true
+
+# --- LoRA Adapter (MAXIMUM for cloud GPUs) ---
+lora:
+  r: 128                   # highest practical rank — maximum learning capacity
+  lora_alpha: 256           # 2x rank
+  lora_dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+    - "lm_head"            # also adapt the output layer for better generation
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# --- Training Hyperparameters (GCP CLOUD — A100 40GB) ---
+training:
+  output_dir: "./outputs/checkpoints"
+  resume_from_checkpoint: true            # AUTO-RESUME from last checkpoint
+  num_train_epochs: 15                    # 15 full passes — let it cook
+  per_device_train_batch_size: 4          # A100 can handle batch 4 easily
+  per_device_eval_batch_size: 4
+  gradient_accumulation_steps: 8          # effective batch = 4 * 8 = 32
+  learning_rate: 1.0e-4
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  lr_scheduler_type: "cosine_with_restarts"  # restarts help escape local minima
+  num_cycles: 3                           # 3 cosine restarts over 15 epochs
+  max_grad_norm: 1.0
+  fp16: false
+  bf16: true                              # A100 native bfloat16
+  max_seq_length: 4096                    # full context length
+  packing: true
+  gradient_checkpointing: true
+
+  # Checkpointing — CRITICAL for resume support
+  save_strategy: "steps"
+  save_steps: 100                         # save every 100 steps
+  eval_strategy: "steps"
+  eval_steps: 100
+  save_total_limit: 10                    # keep 10 checkpoints
+  load_best_model_at_end: true
+  metric_for_best_model: "eval_loss"
+  greater_is_better: false
+
+  # Logging
+  logging_steps: 10
+  logging_first_step: true
+  report_to: "wandb"
+
+  # Advanced optimizations
+  optim: "paged_adamw_32bit"              # full precision optimizer on cloud
+  neftune_noise_alpha: 5.0                # NEFTune for +5-10% quality
+  dataloader_num_workers: 4
+  dataloader_pin_memory: true
+  torch_compile: false                    # set true if using PyTorch 2.1+ for speed
+
+  # Early stopping
+  early_stopping: true
+  early_stopping_patience: 10             # stop if no improvement for 10 evals
+
+# --- T4 / V100 fallback (if A100 not available) ---
+# Uncomment these to override for smaller GPUs:
+# training_override_t4:
+#   per_device_train_batch_size: 1
+#   gradient_accumulation_steps: 32
+#   max_seq_length: 2048
+#   bf16: false
+#   fp16: true
+
+# --- Data ---
+data:
+  train_file: "./data/processed/train.jsonl"
+  eval_file: "./data/processed/eval.jsonl"
+  prompt_template: "./data/prompts/friction_simulation.txt"
+  max_samples: null
+
+  generation:
+    target_samples: 50000
+    domains:
+      social_cultural: 0.35
+      political: 0.35
+      crossover: 0.20
+      elections: 0.10
+    augmentation:
+      paraphrase: true
+      perspective_flip: true
+      severity_scaling: true
+      multiplier: 3
+
+# --- Weights & Biases ---
+wandb:
+  project: "dsfs-model-gcp"
+  entity: null
+  run_name: null
+
+# --- Google Drive checkpoint sync ---
+gdrive:
+  enabled: true
+  sync_dir: "/content/drive/MyDrive/dsfs-checkpoints"
+  sync_every_n_steps: 100                 # backup to Drive every 100 steps
