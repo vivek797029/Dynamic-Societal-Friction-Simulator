@@ -842,6 +842,330 @@ def generate_dataset(
     return {"train_samples": len(train_data), "eval_samples": len(eval_data)}
 
 
+# ================================================================
+# REAL DATASET DOWNLOADER (HuggingFace — auto-downloads during training)
+# ================================================================
+
+REAL_DATASETS = [
+    {
+        "name": "social_bias_frames",
+        "hf_path": "social_bias_frames",
+        "split": "train",
+        "text_field": "post",
+        "label_field": "offensiveYN",
+        "domain": "social",
+        "description": "Real social bias and offensive speech dataset",
+    },
+    {
+        "name": "tweet_eval_hate",
+        "hf_path": "tweet_eval",
+        "hf_name": "hate",
+        "split": "train",
+        "text_field": "text",
+        "label_field": "label",
+        "domain": "social",
+        "description": "Hate speech detection on Twitter/X",
+    },
+    {
+        "name": "political_bias",
+        "hf_path": "valurank/Political-Bias-Prediction-Allsides",
+        "split": "train",
+        "text_field": "article",
+        "label_field": "bias",
+        "domain": "political",
+        "description": "Real political news with left/center/right bias labels",
+    },
+    {
+        "name": "ethos_hate",
+        "hf_path": "ethos",
+        "hf_name": "binary",
+        "split": "train",
+        "text_field": "text",
+        "label_field": "label",
+        "domain": "social",
+        "description": "Online hate speech detection dataset",
+    },
+]
+
+LABEL_MAP = {
+    # social_bias_frames
+    "0.0": "non-offensive",
+    "1.0": "offensive",
+    # tweet_eval hate
+    0: "non-hateful",
+    1: "hateful",
+    # political bias
+    "left": "Left-leaning",
+    "center": "Center",
+    "right": "Right-leaning",
+    "left-center": "Center-Left",
+    "right-center": "Center-Right",
+}
+
+
+def _format_real_sample(text: str, label: str, domain: str, source: str) -> dict:
+    """Convert a real dataset sample into our instruction-tuning format."""
+    label_str = LABEL_MAP.get(label, str(label))
+
+    instruction = (
+        f"[REAL-WORLD {domain.upper()} DATA — Source: {source}]\n\n"
+        f"Analyze the following real-world text for social friction, "
+        f"political polarization, and conflict dynamics.\n\n"
+        f"Text: {text}\n\n"
+        f"Provide analysis covering: friction_type, escalation_risk, "
+        f"emotional_dynamics, affected_parties, root_causes."
+    )
+
+    response = (
+        f"Real-world friction analysis:\n"
+        f"Source: {source}\n"
+        f"Domain: {domain}\n"
+        f"Classification: {label_str}\n"
+        f"This text represents {label_str.lower()} content in the {domain} domain. "
+        f"The friction dynamics present include social tension, polarization indicators, "
+        f"and conflict escalation signals that warrant careful multi-perspective analysis."
+    )
+
+    return {
+        "instruction": instruction,
+        "input": "",
+        "output": response,
+        "domain": domain,
+        "category": f"real_{source}",
+        "metadata": {
+            "groups": [],
+            "factions": [],
+            "severity": 0.6,
+            "source": source,
+            "real_label": label_str,
+        },
+    }
+
+
+def download_real_datasets(
+    output_dir: str = "data/processed",
+    max_samples_per_dataset: int = 5000,
+) -> int:
+    """
+    Download real HuggingFace datasets and merge with synthetic data.
+    Called automatically during training — no manual download needed.
+
+    Returns total number of real samples added.
+    """
+    try:
+        from datasets import load_dataset as hf_load_dataset
+    except ImportError:
+        logger.warning("HuggingFace datasets not installed — skipping real data download")
+        return 0
+
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    real_samples_path = out / "real_samples.jsonl"
+
+    if real_samples_path.exists():
+        with open(real_samples_path) as f:
+            count = sum(1 for _ in f)
+        logger.info(f"Real dataset cache found: {count} samples — skipping download")
+        return count
+
+    all_real = []
+
+    for ds_cfg in REAL_DATASETS:
+        try:
+            logger.info(f"Downloading: {ds_cfg['description']}...")
+
+            # Load dataset from HuggingFace (auto-caches)
+            load_kwargs = {"path": ds_cfg["hf_path"], "split": ds_cfg["split"]}
+            if "hf_name" in ds_cfg:
+                load_kwargs["name"] = ds_cfg["hf_name"]
+            load_kwargs["trust_remote_code"] = True
+
+            dataset = hf_load_dataset(**load_kwargs)
+
+            # Sample to limit size
+            n = min(max_samples_per_dataset, len(dataset))
+            indices = random.sample(range(len(dataset)), n)
+
+            for idx in indices:
+                row = dataset[idx]
+                text = str(row.get(ds_cfg["text_field"], "")).strip()
+                label = row.get(ds_cfg["label_field"], "unknown")
+
+                if not text or len(text) < 20:
+                    continue
+
+                sample = _format_real_sample(
+                    text=text[:1000],  # cap at 1000 chars
+                    label=label,
+                    domain=ds_cfg["domain"],
+                    source=ds_cfg["name"],
+                )
+                all_real.append(sample)
+
+            logger.info(f"  ✓ {ds_cfg['name']}: {n} samples loaded")
+
+        except Exception as e:
+            logger.warning(f"  ✗ {ds_cfg['name']} failed (non-fatal): {e}")
+            continue
+
+    if not all_real:
+        logger.warning("No real datasets could be loaded — using synthetic data only")
+        return 0
+
+    # Save real samples cache
+    with open(real_samples_path, "w") as f:
+        for s in all_real:
+            f.write(json.dumps(s) + "\n")
+
+    logger.info(f"Real datasets saved: {len(all_real)} samples → {real_samples_path}")
+    return len(all_real)
+
+
+def merge_real_and_synthetic(output_dir: str = "data/processed"):
+    """
+    Merge real HuggingFace data with synthetic data into final train/eval splits.
+    Automatically called by generate_dataset() when use_real_data=True.
+    """
+    out = Path(output_dir)
+    real_path = out / "real_samples.jsonl"
+    train_path = out / "train.jsonl"
+    eval_path = out / "eval.jsonl"
+
+    if not real_path.exists():
+        logger.info("No real samples to merge")
+        return
+
+    # Load real samples
+    real_samples = []
+    with open(real_path) as f:
+        for line in f:
+            real_samples.append(json.loads(line))
+
+    # Load existing train data
+    train_samples = []
+    if train_path.exists():
+        with open(train_path) as f:
+            for line in f:
+                train_samples.append(json.loads(line))
+
+    # Split real data: 90% train, 10% eval
+    random.shuffle(real_samples)
+    split = int(len(real_samples) * 0.9)
+    real_train = real_samples[:split]
+    real_eval = real_samples[split:]
+
+    # Merge into train
+    combined_train = train_samples + real_train
+    random.shuffle(combined_train)
+
+    with open(train_path, "w") as f:
+        for s in combined_train:
+            f.write(json.dumps(s) + "\n")
+
+    # Append real eval to eval file
+    with open(eval_path, "a") as f:
+        for s in real_eval:
+            f.write(json.dumps(s) + "\n")
+
+    logger.info(
+        f"Merged: {len(train_samples)} synthetic + {len(real_train)} real = "
+        f"{len(combined_train)} total training samples"
+    )
+
+
+def generate_dataset(
+    num_samples: int = 1000,
+    output_dir: str = "data/processed",
+    eval_ratio: float = 0.1,
+    seed: int = 42,
+    augment: bool = True,
+    use_real_data: bool = True,
+    max_real_samples_per_dataset: int = 5000,
+):
+    """
+    Generate a full training dataset combining:
+    - Synthetic scenarios from templates (50K+ base, augmented to 200K+)
+    - Real HuggingFace datasets (auto-downloaded, no manual step needed)
+
+    Args:
+        num_samples: Number of synthetic base samples to generate
+        output_dir: Where to save JSONL files
+        eval_ratio: Fraction of data to use for evaluation
+        seed: Random seed for reproducibility
+        augment: Whether to augment synthetic data (3x multiplier)
+        use_real_data: Whether to auto-download and merge real HuggingFace datasets
+        max_real_samples_per_dataset: Max samples to pull from each real dataset
+    """
+    random.seed(seed)
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    logger.info(f"Generating {num_samples} base samples...")
+
+    # Generate base samples
+    base_samples = []
+    for i in range(num_samples):
+        scenario = generate_synthetic_scenario()
+        sample = format_as_instruction(scenario)
+        base_samples.append(sample)
+        if (i + 1) % 5000 == 0:
+            logger.info(f"  Generated {i + 1}/{num_samples} base samples...")
+
+    # Domain distribution stats
+    domain_counts = {}
+    for s in base_samples:
+        domain_counts[s["domain"]] = domain_counts.get(s["domain"], 0) + 1
+    logger.info(f"Domain distribution: {domain_counts}")
+
+    # Augmentation
+    all_samples = list(base_samples)
+    if augment:
+        logger.info("Augmenting dataset (perspective flips + severity scaling)...")
+        for sample in base_samples:
+            augmented = augment_sample(sample)
+            all_samples.extend(augmented)
+        logger.info(f"Augmented: {len(base_samples)} → {len(all_samples)} total samples")
+
+    # Shuffle and split
+    random.shuffle(all_samples)
+    split_idx = int(len(all_samples) * (1 - eval_ratio))
+    train_data = all_samples[:split_idx]
+    eval_data = all_samples[split_idx:]
+
+    # Save synthetic data first
+    train_path = out / "train.jsonl"
+    eval_path = out / "eval.jsonl"
+
+    for path, data in [(train_path, train_data), (eval_path, eval_data)]:
+        with open(path, "w") as f:
+            for item in data:
+                f.write(json.dumps(item) + "\n")
+
+    logger.info(f"Synthetic: {len(train_data)} train + {len(eval_data)} eval samples saved")
+
+    # Download and merge real data
+    if use_real_data:
+        logger.info("=" * 50)
+        logger.info("Downloading real HuggingFace datasets...")
+        logger.info("(This is automatic — no manual download needed)")
+        logger.info("=" * 50)
+        real_count = download_real_datasets(
+            output_dir=output_dir,
+            max_samples_per_dataset=max_real_samples_per_dataset,
+        )
+        if real_count > 0:
+            merge_real_and_synthetic(output_dir=output_dir)
+
+    # Final count
+    final_train = sum(1 for _ in open(train_path))
+    final_eval = sum(1 for _ in open(eval_path))
+    logger.info("=" * 50)
+    logger.info(f"FINAL DATASET: {final_train} train + {final_eval} eval = {final_train + final_eval} total")
+    logger.info("=" * 50)
+
+    return {"train_samples": final_train, "eval_samples": final_eval}
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    generate_dataset(num_samples=50000, augment=True)
+    generate_dataset(num_samples=50000, augment=True, use_real_data=True)
