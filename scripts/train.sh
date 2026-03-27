@@ -9,7 +9,7 @@ source .venv/bin/activate
 
 # Set environment variables for efficient training
 export TOKENIZERS_PARALLELISM=false
-export WANDB_PROJECT="dsfs-model"
+export WANDB_PROJECT="dsfs-model-gcp"
 
 echo "=== Starting DSFS Model Training ==="
 echo "Config: configs/model_config.yaml"

@@ -89,16 +89,31 @@ class FrictionLLM:
         )
         return response.strip()
 
-    def analyze_friction(self, scenario: str, group_a: str, group_b: str) -> dict:
-        """Analyze a friction scenario between two groups."""
-        prompt = (
-            f"<|scenario|>\n{scenario}\n"
-            f"<|group_a|>\n{group_a}\n"
-            f"<|group_b|>\n{group_b}\n"
-            f"<|analysis|>\n"
-        )
+    def analyze_friction(self, scenario: str, group_a: str | None = None, group_b: str | None = None) -> dict:
+        """
+        Analyze a friction scenario between two groups.
+
+        Args:
+            scenario: The scenario description
+            group_a: Optional first group name (if not provided, will analyze scenario alone)
+            group_b: Optional second group name (if not provided, will analyze scenario alone)
+        """
+        if group_a and group_b:
+            prompt = (
+                f"<|scenario|>\n{scenario}\n"
+                f"<|group_a|>\n{group_a}\n"
+                f"<|group_b|>\n{group_b}\n"
+                f"<|analysis|>\n"
+            )
+            groups = [group_a, group_b]
+        else:
+            prompt = (
+                f"<|scenario|>\n{scenario}\n"
+                f"<|analysis|>\n"
+            )
+            groups = []
         raw = self.generate(prompt, max_new_tokens=1024, temperature=0.4)
-        return {"raw_analysis": raw, "scenario": scenario, "groups": [group_a, group_b]}
+        return {"raw_analysis": raw, "scenario": scenario, "groups": groups}
 
     def predict_escalation(self, history: list[str], current_event: str) -> str:
         """Predict how a friction event might escalate given history."""

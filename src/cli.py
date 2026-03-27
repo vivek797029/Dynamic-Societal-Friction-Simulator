@@ -146,5 +146,24 @@ def evaluate(
     console.print(f"Cross-domain coupling:{interp['cross_domain_coupling']}")
 
 
+@app.command()
+def visualize(
+    results_dir: str = typer.Option("outputs/results", help="Path to simulation results"),
+    output_dir: str = typer.Option("outputs/visualizations", help="Output directory for plots"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+):
+    """Generate publication-quality visualizations from simulation results."""
+    setup_logging(verbose)
+    console.print("[bold cyan]Generating visualizations...[/]")
+
+    from src.visualization.dashboard import generate_full_report
+    saved_files = generate_full_report(results_dir, output_dir)
+
+    console.print(f"[bold green]Visualization complete![/]")
+    console.print(f"Generated {len(saved_files)} plots:")
+    for fpath in saved_files:
+        console.print(f"  - {fpath}")
+
+
 if __name__ == "__main__":
     app()

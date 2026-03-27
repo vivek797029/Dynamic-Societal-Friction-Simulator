@@ -53,6 +53,13 @@ class SimulationMetrics:
     election_competitiveness: float = 0.0     # avg margin (lower = more competitive)
     post_election_friction_spike: float = 0.0
 
+    # Novel cognitive models
+    avg_cognitive_dissonance: float = 0.0     # average dissonance across agents
+    overton_window_width: float = 0.0         # final width of discourse range
+    overton_window_shift: float = 0.0         # cumulative center shift (polarization signal)
+    emotional_contagion_r0: float = 0.0       # basic reproduction number for emotions
+    emotional_epidemic_count: int = 0         # number of emotional cascades detected
+
 
 def compute_friction_volatility(friction_history: list[float]) -> float:
     """Measure how much friction scores fluctuate over time."""
@@ -159,6 +166,85 @@ def compute_election_metrics(elections: list[dict]) -> dict:
     }
 
 
+def compute_cognitive_dissonance_metrics(dissonance_history: list[dict]) -> float:
+    """
+    Compute average cognitive dissonance across the simulation.
+
+    Args:
+        dissonance_history: List of dissonance snapshots from cognitive model
+
+    Returns:
+        Average dissonance score (0-1)
+    """
+    if not dissonance_history:
+        return 0.0
+
+    dissonance_scores = [
+        d.get("avg_dissonance", 0.0) for d in dissonance_history
+    ]
+
+    if not dissonance_scores:
+        return 0.0
+
+    return float(np.mean(dissonance_scores))
+
+
+def compute_overton_window_metrics(overton_history: list[dict]) -> tuple[float, float]:
+    """
+    Compute Overton Window metrics: final width and cumulative shift.
+
+    Args:
+        overton_history: List of Overton Window snapshots
+
+    Returns:
+        Tuple of (final_window_width, cumulative_center_shift)
+    """
+    if not overton_history:
+        return 2.0, 0.0
+
+    # Final window width
+    final_width = overton_history[-1].get("width", 2.0)
+
+    # Cumulative center shift (measure of polarization movement)
+    centers = [w.get("center", 0.0) for w in overton_history]
+    if len(centers) < 2:
+        return final_width, 0.0
+
+    cumulative_shift = abs(centers[-1] - centers[0])
+
+    return float(final_width), float(cumulative_shift)
+
+
+def compute_emotional_contagion_metrics(contagion_history: list[dict]) -> tuple[float, int]:
+    """
+    Compute emotional contagion metrics: average R0 and epidemic count.
+
+    Args:
+        contagion_history: List of emotional contagion snapshots
+
+    Returns:
+        Tuple of (avg_r0, total_epidemic_count)
+    """
+    if not contagion_history:
+        return 0.0, 0
+
+    # Average R0 across all emotions
+    r0_values = []
+    for snapshot in contagion_history:
+        r0_by_emotion = snapshot.get("r0_by_emotion", {})
+        r0_values.extend(r0_by_emotion.values())
+
+    avg_r0 = float(np.mean(r0_values)) if r0_values else 0.0
+
+    # Count epidemics (unique emotional cascades)
+    epidemic_counts = [
+        snapshot.get("epidemic_count", 0) for snapshot in contagion_history
+    ]
+    total_epidemics = max(epidemic_counts) if epidemic_counts else 0
+
+    return avg_r0, int(total_epidemics)
+
+
 def compute_crossdomain_correlation(
     social_history: list[float], political_history: list[float]
 ) -> float:
@@ -232,6 +318,33 @@ def evaluate_simulation_run(results_dir: str) -> SimulationMetrics:
         metrics.election_count = election_m["count"]
         metrics.election_competitiveness = 1.0 - election_m["avg_margin"]
 
+    # Load cognitive dissonance
+    dissonance_file = results_path / "cognitive_dissonance.json"
+    if dissonance_file.exists():
+        with open(dissonance_file) as f:
+            dissonance_history = json.load(f)
+        metrics.avg_cognitive_dissonance = compute_cognitive_dissonance_metrics(
+            dissonance_history
+        )
+
+    # Load Overton Window
+    overton_file = results_path / "overton_window.json"
+    if overton_file.exists():
+        with open(overton_file) as f:
+            overton_history = json.load(f)
+        window_width, window_shift = compute_overton_window_metrics(overton_history)
+        metrics.overton_window_width = window_width
+        metrics.overton_window_shift = window_shift
+
+    # Load emotional contagion
+    contagion_file = results_path / "emotional_contagion.json"
+    if contagion_file.exists():
+        with open(contagion_file) as f:
+            contagion_history = json.load(f)
+        avg_r0, epidemic_count = compute_emotional_contagion_metrics(contagion_history)
+        metrics.emotional_contagion_r0 = avg_r0
+        metrics.emotional_epidemic_count = epidemic_count
+
     logger.info(f"Simulation evaluation complete: {metrics}")
     return metrics
 
@@ -261,6 +374,13 @@ def generate_report(
             "election_count": metrics.election_count,
             "competitiveness": metrics.election_competitiveness,
         },
+        "cognitive_models": {
+            "avg_cognitive_dissonance": metrics.avg_cognitive_dissonance,
+            "overton_window_width": metrics.overton_window_width,
+            "overton_window_shift": metrics.overton_window_shift,
+            "emotional_contagion_r0": metrics.emotional_contagion_r0,
+            "emotional_epidemic_count": metrics.emotional_epidemic_count,
+        },
         "interpretation": {
             "social_volatility": "high" if metrics.friction_volatility > 0.1 else "stable",
             "social_trend": "resolving" if metrics.convergence_rate > 0 else "escalating",
@@ -283,6 +403,31 @@ def generate_report(
                 "strong" if metrics.political_social_correlation > 0.6
                 else "moderate" if metrics.political_social_correlation > 0.3
                 else "weak"
+            ),
+            "cognitive_conflict": (
+                "high" if metrics.avg_cognitive_dissonance > 0.5
+                else "moderate" if metrics.avg_cognitive_dissonance > 0.3
+                else "low"
+            ),
+            "discourse_range": (
+                "narrow" if metrics.overton_window_width < 1.0
+                else "wide" if metrics.overton_window_width > 1.5
+                else "moderate"
+            ),
+            "discourse_movement": (
+                "rapid_shift" if metrics.overton_window_shift > 0.5
+                else "gradual_shift" if metrics.overton_window_shift > 0.2
+                else "stable"
+            ),
+            "emotional_contagion_threat": (
+                "epidemic_risk" if metrics.emotional_contagion_r0 > 1.5
+                else "moderate_spread" if metrics.emotional_contagion_r0 > 1.0
+                else "contained"
+            ),
+            "emotional_cascades_detected": (
+                "multiple" if metrics.emotional_epidemic_count > 3
+                else "some" if metrics.emotional_epidemic_count > 0
+                else "none"
             ),
         },
     }

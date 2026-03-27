@@ -782,66 +782,6 @@ def augment_sample(sample: dict) -> list[dict]:
     return augmented
 
 
-def generate_dataset(
-    num_samples: int = 1000,
-    output_dir: str = "data/processed",
-    eval_ratio: float = 0.1,
-    seed: int = 42,
-    augment: bool = True,
-):
-    """Generate a synthetic training dataset with optional augmentation."""
-    random.seed(seed)
-    out = Path(output_dir)
-    out.mkdir(parents=True, exist_ok=True)
-
-    logger.info(f"Generating {num_samples} base samples...")
-
-    # Generate base samples
-    base_samples = []
-    for i in range(num_samples):
-        scenario = generate_synthetic_scenario()
-        sample = format_as_instruction(scenario)
-        base_samples.append(sample)
-
-        if (i + 1) % 5000 == 0:
-            logger.info(f"  Generated {i + 1}/{num_samples} base samples...")
-
-    # Domain distribution stats
-    domain_counts = {}
-    for s in base_samples:
-        domain_counts[s["domain"]] = domain_counts.get(s["domain"], 0) + 1
-    logger.info(f"Domain distribution: {domain_counts}")
-
-    # Augmentation
-    all_samples = list(base_samples)
-    if augment:
-        logger.info("Augmenting dataset (perspective flips + severity scaling)...")
-        for sample in base_samples:
-            augmented = augment_sample(sample)
-            all_samples.extend(augmented)
-        logger.info(f"Augmented: {len(base_samples)} → {len(all_samples)} total samples")
-
-    # Shuffle and split
-    random.shuffle(all_samples)
-    split_idx = int(len(all_samples) * (1 - eval_ratio))
-    train_data = all_samples[:split_idx]
-    eval_data = all_samples[split_idx:]
-
-    # Save
-    train_path = out / "train.jsonl"
-    eval_path = out / "eval.jsonl"
-
-    for path, data in [(train_path, train_data), (eval_path, eval_data)]:
-        with open(path, "w") as f:
-            for item in data:
-                f.write(json.dumps(item) + "\n")
-
-    logger.info(f"Saved {len(train_data)} train + {len(eval_data)} eval samples")
-    logger.info(f"Files: {train_path}, {eval_path}")
-
-    return {"train_samples": len(train_data), "eval_samples": len(eval_data)}
-
-
 # ================================================================
 # REAL DATASET DOWNLOADER (HuggingFace — auto-downloads during training)
 # ================================================================

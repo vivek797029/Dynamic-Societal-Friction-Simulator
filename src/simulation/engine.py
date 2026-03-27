@@ -22,6 +22,12 @@ if TYPE_CHECKING:
     from src.agents.social_agent import SocialAgent
     from src.model.inference import FrictionLLM
 
+from src.model.cognitive_models import (
+    CognitiveDissonanceTracker,
+    OvertonWindowTracker,
+    EmotionalContagionModel,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -55,6 +61,11 @@ class SimulationState:
     metrics_history: list[dict] = field(default_factory=list)
     ideology_snapshots: list[dict] = field(default_factory=list)
 
+    # Novel cognitive models
+    cognitive_dissonance_history: list[dict] = field(default_factory=list)
+    overton_window_history: list[dict] = field(default_factory=list)
+    emotional_contagion_history: list[dict] = field(default_factory=list)
+
 
 class SimulationEngine:
     """
@@ -78,6 +89,11 @@ class SimulationEngine:
         self.network: nx.Graph = nx.Graph()
         self.state = SimulationState()
 
+        # Initialize cognitive models
+        self.dissonance_tracker = CognitiveDissonanceTracker()
+        self.overton_window_tracker = OvertonWindowTracker()
+        self.emotional_contagion_model: EmotionalContagionModel | None = None
+
         self._political_enabled = self.cfg.get("political", {}).get("enabled", False)
         self._media_enabled = self.cfg.get("media", {}).get("enabled", False)
         self._elections_enabled = (
@@ -100,6 +116,10 @@ class SimulationEngine:
         self._initialize_group_friction()
         if self._political_enabled:
             self._initialize_faction_friction()
+
+        # Initialize emotional contagion model with built network
+        self.emotional_contagion_model = EmotionalContagionModel(self.network)
+        self.emotional_contagion_model.update_agent_susceptibility(self.agents)
 
         logger.info(
             f"Simulation initialized: {len(self.agents)} agents, "
@@ -144,6 +164,25 @@ class SimulationEngine:
         factions = self.cfg.get("political", {}).get("factions", [])
         for f in factions:
             self.state.faction_friction_scores[f["name"]] = 0.1
+
+    def _get_faction_policies(self, faction_name: str) -> dict[str, float]:
+        """
+        Extract faction policies as a mapping of values to support levels.
+
+        Args:
+            faction_name: Name of the faction
+
+        Returns:
+            Dict mapping value names to policy alignment (0-1)
+        """
+        factions = self.cfg.get("political", {}).get("factions", [])
+        for faction in factions:
+            if faction.get("name") == faction_name:
+                # Extract policies or key positions
+                policies = faction.get("key_policies", {})
+                # Normalize to 0-1 range if needed
+                return {k: max(0.0, min(1.0, float(v))) for k, v in policies.items()}
+        return {}
 
     # ----------------------------------------------------------------
     # Event Generation
@@ -372,6 +411,152 @@ class SimulationEngine:
                 # Low friction → moderate
                 agent.politics.moderate(rate=pol_cfg.get("moderation_rate", 0.03))
 
+    def _apply_cognitive_dissonance(self) -> dict:
+        """
+        Step 4.5: Apply cognitive dissonance engine after media influence.
+
+        Agents experience internal conflict when their core values clash with
+        their faction's policies. This drives behavioral/cognitive changes.
+
+        Returns:
+            Summary dict with dissonance metrics
+        """
+        if not self._political_enabled:
+            return {}
+
+        dissonance_data = {
+            "step": self.state.current_step,
+            "avg_dissonance": 0.0,
+            "resolutions": [],
+        }
+
+        factions = self.cfg.get("political", {}).get("factions", [])
+        dissonance_scores = []
+
+        for agent in self.agents.values():
+            faction_policies = self._get_faction_policies(agent.politics.faction)
+            dissonance_score = self.dissonance_tracker.compute_dissonance(
+                agent, faction_policies
+            )
+            dissonance_scores.append(dissonance_score)
+
+            # Track the dissonance
+            self.dissonance_tracker.track_dissonance(agent.agent_id, dissonance_score)
+
+            # Attempt resolution if dissonance is high
+            if dissonance_score > 0.4:
+                resolution = self.dissonance_tracker.resolve_dissonance(
+                    agent, dissonance_score, factions
+                )
+                dissonance_data["resolutions"].append({
+                    "agent_id": agent.agent_id,
+                    "strategy": (
+                        resolution.resolution_strategy.value
+                        if resolution.resolution_strategy
+                        else None
+                    ),
+                    "success": resolution.success,
+                })
+
+                # Apply resolution effects
+                if resolution.success:
+                    if resolution.value_shift_magnitude > 0:
+                        # Agent's values shift toward faction position
+                        agent.politics.partisan_strength = min(
+                            1.0, agent.politics.partisan_strength +
+                            resolution.value_shift_magnitude * 0.1
+                        )
+                    if resolution.faction_switch_likelihood > 0.5:
+                        # Agent may switch factions (simplified)
+                        if random.random() < 0.2:
+                            new_faction = random.choice(
+                                [f["name"] for f in factions]
+                            )
+                            agent.politics.faction = new_faction
+                            agent.politics.partisan_strength = resolution.new_partisan_strength
+
+        if dissonance_scores:
+            dissonance_data["avg_dissonance"] = float(
+                sum(dissonance_scores) / len(dissonance_scores)
+            )
+
+        self.state.cognitive_dissonance_history.append(dissonance_data)
+        return dissonance_data
+
+    def _apply_overton_window_tracking(self) -> dict:
+        """
+        Step 7.5: Track Overton Window after ideology drift.
+
+        Measures the range of "acceptable" political discourse and detects
+        shifts, shocks, and polarization patterns.
+
+        Returns:
+            Summary dict with Overton Window metrics
+        """
+        if not self._political_enabled:
+            return {}
+
+        snapshot = self.overton_window_tracker.track_window(list(self.agents.values()))
+
+        window_data = {
+            "step": self.state.current_step,
+            "left_edge": snapshot.left_edge,
+            "right_edge": snapshot.right_edge,
+            "center": snapshot.center,
+            "width": snapshot.width,
+            "left_tail_mass": snapshot.left_tail_mass,
+            "right_tail_mass": snapshot.right_tail_mass,
+            "polarization_signature": (
+                self.overton_window_tracker.detect_polarization_signature()
+            ),
+        }
+
+        # If window is narrowing, increase political friction (polarization effect)
+        widths = self.overton_window_tracker.window_width_history()
+        if len(widths) >= 2 and widths[-1] < widths[-2] * 0.95:
+            for faction_name in self.state.faction_friction_scores:
+                current = self.state.faction_friction_scores[faction_name]
+                self.state.faction_friction_scores[faction_name] = min(1.0, current + 0.05)
+
+        self.state.overton_window_history.append(window_data)
+        return window_data
+
+    def _apply_emotional_contagion(self) -> dict:
+        """
+        Step 9.5: Apply emotional contagion after updating agent emotions.
+
+        Models how emotions spread through the social network with negativity
+        bias. Tracks emotional epidemics and network R0.
+
+        Returns:
+            Summary dict with contagion metrics
+        """
+        if not self.emotional_contagion_model:
+            return {}
+
+        # Track current contagion state
+        metrics = self.emotional_contagion_model.track_contagion(
+            self.agents, self.state.current_step
+        )
+
+        # Identify epidemics
+        epidemics = self.emotional_contagion_model.identify_epidemics(
+            self.agents, minimum_size=3
+        )
+
+        contagion_data = {
+            "step": self.state.current_step,
+            "emotion_distribution": metrics.emotional_state_distribution,
+            "r0_by_emotion": metrics.contagion_r0_by_emotion,
+            "active_outbreaks": metrics.active_emotional_outbreaks,
+            "network_susceptibility": metrics.network_susceptibility,
+            "epidemic_count": len(epidemics),
+            "avg_r0": self.emotional_contagion_model.average_network_r0(),
+        }
+
+        self.state.emotional_contagion_history.append(contagion_data)
+        return contagion_data
+
     # ----------------------------------------------------------------
     # Main Simulation Loop
     # ----------------------------------------------------------------
@@ -436,6 +621,9 @@ class SimulationEngine:
         # 4. Media influence
         self._apply_media_influence()
 
+        # 4.5. NOVEL: Cognitive dissonance (values vs faction policies)
+        dissonance_metrics = self._apply_cognitive_dissonance()
+
         # 5. Update social friction scores
         friction_cfg = self.cfg["friction"]
         for group in event.affected_groups:
@@ -465,6 +653,9 @@ class SimulationEngine:
         # 7. Ideology drift (radicalization / moderation)
         self._apply_ideology_drift()
 
+        # 7.5. NOVEL: Overton Window tracking (discourse range shifts)
+        overton_metrics = self._apply_overton_window_tracking()
+
         # 8. Update global scores
         social_scores = list(self.state.group_friction_scores.values())
         self.state.global_friction_score = (
@@ -486,6 +677,9 @@ class SimulationEngine:
             ) if self._political_enabled else 0.0
             agent.update_emotional_state(group_friction, pol_friction)
 
+        # 9.5. NOVEL: Emotional contagion through social network
+        contagion_metrics = self._apply_emotional_contagion()
+
         # 10. Snapshot ideology
         if self._political_enabled:
             self._snapshot_ideology()
@@ -502,6 +696,10 @@ class SimulationEngine:
             "num_reactions": len(reactions),
             "num_interactions": len(interactions),
             "election": election_result,
+            # Novel cognitive models
+            "cognitive_dissonance": dissonance_metrics,
+            "overton_window": overton_metrics,
+            "emotional_contagion": contagion_metrics,
         }
         self.state.metrics_history.append(step_metrics)
 
@@ -529,9 +727,13 @@ class SimulationEngine:
     def _save_checkpoint(self):
         save_dir = Path(self.cfg["output"]["save_dir"])
         save_dir.mkdir(parents=True, exist_ok=True)
+        checkpoint_data = {
+            "metrics_history": self.state.metrics_history,
+            "ideology_snapshots": self.state.ideology_snapshots,
+        }
         path = save_dir / f"checkpoint_step_{self.state.current_step}.json"
         with open(path, "w") as f:
-            json.dump(self.state.metrics_history, f, indent=2)
+            json.dump(checkpoint_data, f, indent=2)
 
     def _save_final_results(self):
         save_dir = Path(self.cfg["output"]["save_dir"])
@@ -543,6 +745,9 @@ class SimulationEngine:
             ("interactions.json", self.state.interaction_log),
             ("elections.json", self.state.election_log),
             ("ideology_shifts.json", self.state.ideology_snapshots),
+            ("cognitive_dissonance.json", self.state.cognitive_dissonance_history),
+            ("overton_window.json", self.state.overton_window_history),
+            ("emotional_contagion.json", self.state.emotional_contagion_history),
         ]:
             with open(save_dir / name, "w") as f:
                 json.dump(data, f, indent=2)

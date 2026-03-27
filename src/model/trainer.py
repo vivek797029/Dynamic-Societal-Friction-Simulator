@@ -31,6 +31,7 @@ from transformers import (
     AutoTokenizer,
     BitsAndBytesConfig,
     EarlyStoppingCallback,
+    TrainerCallback,
     TrainingArguments,
 )
 from trl import SFTTrainer, SFTConfig
@@ -269,7 +270,7 @@ def restore_from_gdrive(cfg: dict, output_dir: str) -> str | None:
 # Custom Callback for Google Drive Sync
 # ============================================================
 
-class GDriveSyncCallback:
+class GDriveSyncCallback(TrainerCallback):
     """
     HuggingFace Trainer callback that syncs checkpoints to Google Drive
     at configurable intervals.
