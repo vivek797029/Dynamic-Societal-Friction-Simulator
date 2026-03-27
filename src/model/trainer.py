@@ -293,12 +293,17 @@ def train(config_path: str = "configs/model_config.yaml", resume: bool | None = 
         os.environ.setdefault("WANDB_PROJECT", wandb_cfg.get("project", "dsfs"))
 
     # ── Trainer ──────────────────────────────────────────────
+    # TRL >= 0.9 renamed `tokenizer` → `processing_class`
+    import inspect as _inspect
+    _sft_params = _inspect.signature(SFTTrainer.__init__).parameters
+    _tok_kwarg  = "processing_class" if "processing_class" in _sft_params else "tokenizer"
+
     trainer = SFTTrainer(
         model=model,
         args=training_args,
         train_dataset=dataset["train"],
         eval_dataset=dataset["eval"],
-        tokenizer=tokenizer,
+        **{_tok_kwarg: tokenizer},
         max_seq_length=max_seq_length,
         packing=tcfg.get("packing", True),
         callbacks=callbacks,
