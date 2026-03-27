@@ -307,6 +307,17 @@ def train(config_path: str = "configs/model_config.yaml", resume: bool | None = 
     if wandb_cfg and os.environ.get("WANDB_DISABLED", "false").lower() != "true":
         os.environ.setdefault("WANDB_PROJECT", wandb_cfg.get("project", "dsfs"))
 
+    # ── Formatting function ───────────────────────────────────
+    # Our data has 'instruction' + 'output' fields, not 'text'.
+    # This converts each sample into a single string for SFTTrainer.
+    def formatting_func(example):
+        instruction = example.get("instruction", "")
+        inp         = example.get("input", "")
+        output      = example.get("output", "")
+        if inp:
+            return f"### Instruction:\n{instruction}\n\n### Input:\n{inp}\n\n### Response:\n{output}"
+        return f"### Instruction:\n{instruction}\n\n### Response:\n{output}"
+
     # ── Trainer ──────────────────────────────────────────────
     # Auto-detect what SFTTrainer accepts across all TRL versions
     import inspect as _inspect
@@ -318,6 +329,7 @@ def train(config_path: str = "configs/model_config.yaml", resume: bool | None = 
         train_dataset=dataset["train"],
         eval_dataset=dataset["eval"],
         callbacks=callbacks,
+        formatting_func=formatting_func,
     )
 
     # tokenizer vs processing_class (TRL >= 0.9 renamed it)
@@ -327,7 +339,6 @@ def train(config_path: str = "configs/model_config.yaml", resume: bool | None = 
         _trainer_kwargs["tokenizer"] = tokenizer
 
     # max_seq_length and packing only if SFTTrainer still accepts them
-    # (TRL >= 0.9 moved these to SFTConfig)
     if "max_seq_length" in _sft_sig:
         _trainer_kwargs["max_seq_length"] = max_seq_length
     if "packing" in _sft_sig:
