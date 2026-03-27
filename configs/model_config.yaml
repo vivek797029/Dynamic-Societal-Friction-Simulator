@@ -71,7 +71,7 @@ data:
   train_file: "./data/processed/train.jsonl"
   eval_file: "./data/processed/eval.jsonl"
   prompt_template: "./data/prompts/friction_simulation.txt"
-  max_samples: null
+  max_samples: 5000
   generation:
     target_samples: 50000
     domains:
