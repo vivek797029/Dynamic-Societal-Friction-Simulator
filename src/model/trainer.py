@@ -24,7 +24,12 @@ from transformers import (
     TrainerCallback,
     TrainingArguments,
 )
-from trl import SFTTrainer
+try:
+    from trl import SFTTrainer, SFTConfig as _SFTConfig
+    _HAS_SFT_CONFIG = True
+except ImportError:
+    from trl import SFTTrainer
+    _HAS_SFT_CONFIG = False
 
 logger = logging.getLogger(__name__)
 
@@ -191,8 +196,8 @@ class GDriveSyncCallback(TrainerCallback):
 #                 version-compatibility issues with max_seq_length)
 # ─────────────────────────────────────────────────────────────
 
-def build_training_args(tcfg: dict) -> TrainingArguments:
-    """Build TrainingArguments. max_seq_length is passed to SFTTrainer separately."""
+def build_training_args(tcfg: dict):
+    """Build training args. Uses SFTConfig if available (puts max_seq_length/packing there)."""
 
     # Base args that exist in all transformers versions
     args = dict(
@@ -235,6 +240,16 @@ def build_training_args(tcfg: dict) -> TrainingArguments:
                 args["neftune_noise_alpha"] = neftune
         except Exception:
             pass
+
+    # If SFTConfig is available, add max_seq_length + packing there
+    if _HAS_SFT_CONFIG:
+        import inspect as _i
+        _sft_cfg_params = _i.signature(_SFTConfig.__init__).parameters
+        if "max_seq_length" in _sft_cfg_params:
+            args["max_seq_length"] = tcfg.get("max_seq_length", 2048)
+        if "packing" in _sft_cfg_params:
+            args["packing"] = tcfg.get("packing", True)
+        return _SFTConfig(**args)
 
     return TrainingArguments(**args)
 
@@ -293,21 +308,32 @@ def train(config_path: str = "configs/model_config.yaml", resume: bool | None = 
         os.environ.setdefault("WANDB_PROJECT", wandb_cfg.get("project", "dsfs"))
 
     # ── Trainer ──────────────────────────────────────────────
-    # TRL >= 0.9 renamed `tokenizer` → `processing_class`
+    # Auto-detect what SFTTrainer accepts across all TRL versions
     import inspect as _inspect
-    _sft_params = _inspect.signature(SFTTrainer.__init__).parameters
-    _tok_kwarg  = "processing_class" if "processing_class" in _sft_params else "tokenizer"
+    _sft_sig = _inspect.signature(SFTTrainer.__init__).parameters
 
-    trainer = SFTTrainer(
+    _trainer_kwargs: dict = dict(
         model=model,
         args=training_args,
         train_dataset=dataset["train"],
         eval_dataset=dataset["eval"],
-        **{_tok_kwarg: tokenizer},
-        max_seq_length=max_seq_length,
-        packing=tcfg.get("packing", True),
         callbacks=callbacks,
     )
+
+    # tokenizer vs processing_class (TRL >= 0.9 renamed it)
+    if "processing_class" in _sft_sig:
+        _trainer_kwargs["processing_class"] = tokenizer
+    elif "tokenizer" in _sft_sig:
+        _trainer_kwargs["tokenizer"] = tokenizer
+
+    # max_seq_length and packing only if SFTTrainer still accepts them
+    # (TRL >= 0.9 moved these to SFTConfig)
+    if "max_seq_length" in _sft_sig:
+        _trainer_kwargs["max_seq_length"] = max_seq_length
+    if "packing" in _sft_sig:
+        _trainer_kwargs["packing"] = tcfg.get("packing", True)
+
+    trainer = SFTTrainer(**_trainer_kwargs)
 
     # ── Train ────────────────────────────────────────────────
     logger.info("=" * 60)
