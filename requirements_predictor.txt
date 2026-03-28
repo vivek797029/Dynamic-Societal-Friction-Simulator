@@ -1,0 +1,22 @@
+# DSFS Predictor Dependencies v2.0
+# Core ML (required)
+numpy>=1.24.0
+scikit-learn>=1.3.0
+scipy>=1.11.0
+
+# LGBM Risk Predictor (recommended)
+lightgbm>=4.0.0
+
+# Deep Learning (optional - for CNN-LSTM)
+torch>=2.0.0
+
+# Historical Matcher (optional - for SBERT)
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.0
+
+# Streamlit Web Interface
+streamlit>=1.28.0
+
+# Data & Config
+pyyaml>=6.0.0
+pandas>=2.0.0

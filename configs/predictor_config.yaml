@@ -1,0 +1,101 @@
+# ══════════════════════════════════════════════════════════════
+#  DSFS Predictor Configuration v2.0
+#  Dynamic Society Friction Simulator — Hybrid ML System
+# ══════════════════════════════════════════════════════════════
+
+project:
+  name: "Dynamic Society Friction Simulator"
+  version: "2.0.0"
+  architecture: "Hybrid ML (LGBM + CNN-LSTM + SBERT + GCRI)"
+  is_generative_ai: false
+
+# ─── Data Generation ──────────────────────────────────────────
+data:
+  n_train_samples: 10000
+  n_eval_samples: 2000
+  noise_level: 0.15
+  seed: 42
+  historical_cases: 16
+
+# ─── LGBM Risk Predictor (Layer 1) ────────────────────────────
+lgbm:
+  objective: "regression"
+  metric: "rmse"
+  boosting_type: "gbdt"
+  num_leaves: 63
+  learning_rate: 0.05
+  feature_fraction: 0.8
+  bagging_fraction: 0.8
+  bagging_freq: 5
+  n_estimators: 500
+  max_depth: 8
+  min_child_samples: 10
+  reg_alpha: 0.1
+  reg_lambda: 0.1
+
+# ─── CNN-LSTM Escalation Engine (Layer 2) ─────────────────────
+cnn_lstm:
+  n_features: 14
+  seq_length: 12
+  cnn_filters: 64
+  lstm_hidden: 128
+  n_horizons: 3
+  dropout: 0.3
+  learning_rate: 0.001
+  epochs: 50
+  batch_size: 32
+
+# ─── Historical Matcher (Layer 3) ─────────────────────────────
+matcher:
+  sbert_model: "all-MiniLM-L6-v2"
+  top_k: 3
+  numerical_weight: 0.6
+  text_weight: 0.4
+
+# ─── Confidence Scorer (Layer 4) ──────────────────────────────
+confidence:
+  factor_weights:
+    historical_match: 0.25
+    economic_alignment: 0.25
+    political_alignment: 0.20
+    social_alignment: 0.15
+    model_consensus: 0.15
+  min_confidence: 0.40
+
+# ─── What-If Engine (Layer 5) ─────────────────────────────────
+whatif:
+  n_interventions: 9
+  max_magnitude: 2.0
+  budget_levels: ["low", "medium", "high"]
+
+# ─── Policy Engine (Layer 6) ──────────────────────────────────
+policy:
+  timelines: ["immediate", "short_term", "medium_term"]
+  friction_types: ["economic_crisis", "unemployment_crisis", "political_instability", "social_tension"]
+
+# ─── Risk Thresholds ──────────────────────────────────────────
+risk:
+  levels:
+    LOW: [0, 30]
+    MEDIUM: [30, 60]
+    HIGH: [60, 80]
+    CRITICAL: [80, 100]
+
+# ─── Indicators ───────────────────────────────────────────────
+indicators:
+  count: 14
+  names:
+    - unemployment_rate
+    - inflation_rate
+    - gini_coefficient
+    - youth_bulge_pct
+    - political_stability
+    - press_freedom_index
+    - gdp_growth
+    - poverty_rate
+    - urbanization_rate
+    - internet_penetration
+    - ethnic_fractionalization
+    - corruption_index
+    - military_expenditure_pct
+    - food_price_index
