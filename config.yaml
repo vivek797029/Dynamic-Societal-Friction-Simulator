@@ -1,0 +1,75 @@
+paths:
+  data_root: "./data"
+  raw_gdelt: "./data/raw/gdelt"
+  raw_acled: "./data/raw/acled"
+  articles: "./data/raw/articles"
+  processed: "./data/processed"
+  artifacts: "./artifacts"
+  figures: "./figures"
+
+dates:
+  start: "2015-01-01"
+  end: "2025-12-31"
+  train_cutoff: "2023-06-30"
+  val_cutoff: "2024-06-30"
+
+india:
+  country_code: "IN"
+  num_states: 36
+
+model:
+  backbone: "google/muril-base-cased"
+  max_length: 256
+  embedding_dim: 768
+
+cleavages:
+  - communal
+  - caste
+  - political_party
+  - centre_state
+  - economic
+  - linguistic
+
+trust_learning:
+  batch_size: 32
+  learning_rate: 1.0e-4
+  epochs: 2
+  lora_rank: 8
+  lora_alpha: 16
+  lora_dropout: 0.1
+  contrastive_tau: 0.07
+  jaccard_weight: 0.5
+  consensus_weight: 0.3
+  min_cluster_size: 3
+  max_cluster_size: 30
+
+hostility:
+  learning_rate: 5.0e-5
+  epochs: 3
+  label_smoothing: 0.05
+
+aggregator:
+  window_weeks: 12
+  memory_halflife_weeks:
+    communal: 26
+    caste: 26
+    political_party: 12
+    centre_state: 16
+    economic: 8
+    linguistic: 26
+  learning_rate: 1.0e-3
+  epochs: 200
+  weight_decay: 1.0e-4
+
+forecasting:
+  horizons: [1, 2, 4]
+  mlp_hidden: 128
+  dropout: 0.2
+  learning_rate: 1.0e-3
+  epochs: 100
+
+event_clustering:
+  spatial_days: 2
+  cosine_threshold: 0.75
+  min_entity_overlap: 1
+  faiss_nlist: 256
