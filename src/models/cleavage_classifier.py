@@ -18,9 +18,20 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+
+# torch is only needed for the neural-network classes below.
+# Lazy-import so that CLEAVAGES / weak_label / weak_labels can be used
+# from the query layer (and in tests) without a GPU/torch install.
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    _TORCH_AVAILABLE = True
+except ModuleNotFoundError:  # pragma: no cover
+    torch = None  # type: ignore[assignment]
+    nn = None  # type: ignore[assignment]
+    F = None  # type: ignore[assignment]
+    _TORCH_AVAILABLE = False
 
 CLEAVAGES = ["communal", "caste", "political_party", "centre_state", "economic", "linguistic"]
 
@@ -106,24 +117,32 @@ class CleavageConfig:
     label_smoothing: float = 0.05
 
 
-class CleavageHead(nn.Module):
-    """Tiny MLP head over a frozen MuRIL CLS embedding."""
+if _TORCH_AVAILABLE:
+    class CleavageHead(nn.Module):  # type: ignore[misc]
+        """Tiny MLP head over a frozen MuRIL CLS embedding."""
 
-    def __init__(self, cfg: CleavageConfig | None = None):
-        super().__init__()
-        self.cfg = cfg or CleavageConfig()
-        self.net = nn.Sequential(
-            nn.Linear(self.cfg.hidden, self.cfg.hidden // 2),
-            nn.GELU(),
-            nn.Dropout(self.cfg.dropout),
-            nn.Linear(self.cfg.hidden // 2, self.cfg.num_labels),
-        )
+        def __init__(self, cfg: "CleavageConfig | None" = None):
+            super().__init__()
+            self.cfg = cfg or CleavageConfig()
+            self.net = nn.Sequential(
+                nn.Linear(self.cfg.hidden, self.cfg.hidden // 2),
+                nn.GELU(),
+                nn.Dropout(self.cfg.dropout),
+                nn.Linear(self.cfg.hidden // 2, self.cfg.num_labels),
+            )
 
-    def forward(self, cls: torch.Tensor) -> torch.Tensor:
-        return self.net(cls)
+        def forward(self, cls: "torch.Tensor") -> "torch.Tensor":
+            return self.net(cls)
 
+    def bce_with_smoothing(
+        logits: "torch.Tensor", y: "torch.Tensor", smoothing: float = 0.05
+    ) -> "torch.Tensor":
+        y_smoothed = y * (1 - smoothing) + 0.5 * smoothing
+        return F.binary_cross_entropy_with_logits(logits, y_smoothed)
 
-def bce_with_smoothing(logits: torch.Tensor, y: torch.Tensor,
-                       smoothing: float = 0.05) -> torch.Tensor:
-    y_smoothed = y * (1 - smoothing) + 0.5 * smoothing
-    return F.binary_cross_entropy_with_logits(logits, y_smoothed)
+else:  # pragma: no cover
+    def CleavageHead(*args, **kwargs):  # type: ignore[misc]
+        raise ImportError("CleavageHead requires torch. Install pytorch first.")
+
+    def bce_with_smoothing(*args, **kwargs):  # type: ignore[misc]
+        raise ImportError("bce_with_smoothing requires torch. Install pytorch first.")
